@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -48,6 +49,12 @@ func main() {
 			&cli.IntFlag{Name: "workers", Value: 1, Usage: "Number of workers for downloading and processing data, max of 5 is recommended, disables progressbar"},
 		},
 		Action: func(c *cli.Context) error {
+			buildInfo, ok := debug.ReadBuildInfo()
+			if !ok {
+				return fmt.Errorf("failed to read build info")
+			}
+			fmt.Println("ℹ️ DSAcord " + buildInfo.Main.Version)
+
 			var cfg Config
 			fromStr := c.String("from")
 			toStr := c.String("to")
