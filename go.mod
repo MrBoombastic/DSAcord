@@ -7,7 +7,7 @@ require (
 	github.com/schollz/progressbar/v3 v3.18.0
 	github.com/urfave/cli/v2 v2.27.6
 	gorm.io/driver/postgres v1.5.11
-	gorm.io/gorm v1.26.0
+	gorm.io/gorm v1.30.1
 )
 
 require (
