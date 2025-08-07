@@ -19,6 +19,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/schollz/progressbar/v3"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func downloadWithBackoff(url string) ([]byte, error) {
@@ -31,7 +32,7 @@ func downloadWithBackoff(url string) ([]byte, error) {
 		defer resp.Body.Close()
 
 		if resp.StatusCode == http.StatusForbidden {
-			return backoff.Permanent(fmt.Errorf("forbidden or not exists"))
+			return backoff.Permanent(fmt.Errorf("forbidden or does not exist"))
 		}
 
 		if resp.StatusCode != http.StatusOK {
@@ -46,13 +47,11 @@ func downloadWithBackoff(url string) ([]byte, error) {
 	return data, err
 }
 
-func processZip(data []byte) error {
+func processZip(data []byte, bar *progressbar.ProgressBar) (allDecisions []Decision, err error) {
 	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
-		return fmt.Errorf("failed to open zip file: %w", err)
+		return nil, fmt.Errorf("failed to open zip file: %w", err)
 	}
-
-	var allDecisions []Decision
 
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -72,7 +71,6 @@ func processZip(data []byte) error {
 	}
 	wg.Wait()
 
-	var bar *progressbar.ProgressBar
 	if numWorkers <= 1 {
 		bar = progressbar.NewOptions(len(allDecisions),
 			progressbar.OptionSetDescription("💾 Inserting decisions..."),
@@ -84,8 +82,12 @@ func processZip(data []byte) error {
 		)
 	}
 
-	// bulk insert with transaction
-	batchSize := 1000 // do not increase this too much, it will cause postgres errors
+	return
+}
+
+func processDecisions(allDecisions []Decision, bar *progressbar.ProgressBar, force bool) (err error) {
+	batchSize := 1000 // do not increase this too much, it may cause postgres errors
+
 	return db.Transaction(func(tx *gorm.DB) error {
 		for i := 0; i < len(allDecisions); i += batchSize {
 			end := i + batchSize
@@ -93,9 +95,20 @@ func processZip(data []byte) error {
 				end = len(allDecisions)
 			}
 			batch := allDecisions[i:end]
-			if err := tx.CreateInBatches(batch, batchSize).Error; err != nil {
-				return fmt.Errorf("❌ Failed to insert decision, terminating whole worker/batch: %+v", err)
+
+			if force || skipCheckingDuplicates {
+				if err := tx.Clauses(clause.OnConflict{
+					Columns:   []clause.Column{{Name: "uuid"}},
+					UpdateAll: true,
+				}).CreateInBatches(batch, batchSize).Error; err != nil {
+					return err
+				}
+			} else {
+				if err := tx.CreateInBatches(batch, batchSize).Error; err != nil {
+					return err
+				}
 			}
+
 			if bar != nil {
 				bar.Add(len(batch))
 			}

@@ -1,8 +1,8 @@
 # DSAcord
 
-Simple utility to download Discord data
-from [DSA Transparency Database](https://transparency.dsa.ec.europa.eu/explore-data/download?from_date=&amp;to_date=&amp;uuid=caca0689-3c4f-4a72-8a10-ddc719d22256)
-and store them locally in Postgres.
+A simple utility for downloading Discord data from
+the [DSA Transparency Database](https://transparency.dsa.ec.europa.eu/explore-data/download?from_date=&amp;to_date=&amp;uuid=caca0689-3c4f-4a72-8a10-ddc719d22256)
+and storing it locally in your Postgres.
 Written in Go, of course.
 
 ![hero.png](docs/hero.png)
@@ -10,28 +10,33 @@ Written in Go, of course.
 
 ## Functionality
 
-This project is designed to download transparency data from the DSA (Digital Services Act) Transparency Database and
-store it locally in a PostgreSQL database. It automates downloading ZIP archives, extracts detailed records, and inserts
-them in bulk. You can specify the date range for the data you want, and the tool handles parallel downloads, processing,
-and data insertion while keeping track of execution time and table size.
+This project is designed to download transparency data from the Digital Services Act (DSA) Transparency Database and
+store it locally in a PostgreSQL database.
+The tool automates the downloading of ZIP archives, extracts detailed records,
+and inserts them in bulk.
+You can specify the date range of the required data, and the tool will handle parallel
+downloads, processing, and data insertion, while keeping track of execution time and table size.
 
-✅ Downloading daily data dumps based on user-specified date ranges.  
-✅ Extracting nested ZIP files in parallel using goroutines and a WaitGroup.  
-✅ Conditional progress bar (shown only if there's a single worker).  
-✅ Bulk insertion into PostgreSQL, with transaction handling to ensure atomicity.  
-✅ Display of total inserted rows counts, the time taken, and the database table size upon completion.
+✅ Download daily data dumps based on user-specified date ranges.
+✅ Extracting nested ZIP files in parallel using goroutines and a WaitGroup.
+✅ Showing a conditional progress bar only if there is a single worker.
+✅ Bulk insertion into PostgreSQL with transaction handling to ensure atomicity.
+✅ Displaying the total number of rows inserted, the time taken, and the size of the database table upon completion.
 
 > [!NOTE]  
 > There is no data available to download before 2024-08-21.
-> Also fresh data may be delayed. Watch out!
+> Also, fresh data may be delayed.
+> Watch out!
 
 ## Usage Examples
 
 > [!WARNING]  
-> Be careful with worker size. The memory usage can go very high.
+> Be careful with the number of workers.
+> The memory usage can be very high.
 
 > [!NOTE]  
-> The database must exist before the import. Table will be created automatically.
+> The database must already exist before importing.
+> The table will be created automatically.
 
 ### Help
 
@@ -39,46 +44,51 @@ and data insertion while keeping track of execution time and table size.
 ./dsacord --help
 ```
 
-### One worker (for slower CPUs/lesser memory machines):
+### Single worker (for slower CPUs/lower memory machines):
 
 ```bash
-./dsacord --dbhost=localhost --dbuser=postgres --dbpassword=secret --dbname=dsacord --from=2024-12-28 --to=2025-03-24 --workers=1
+./dsacord --dbhost=localhost --dbuser=postgres --dbpassword=secret --from=2024-12-28 --to=2025-03-24 --workers=1
 ```
 
 ### Multiple workers (much faster):
 
 ```bash
-./dsacord --dbhost=localhost --dbuser=postgres --dbpassword=secret --dbname=dsacord --from=2024-12-28 --to=2025-03-24 --workers=5
+./dsacord --dbhost=localhost --dbuser=postgres --dbpassword=secret --from=2024-12-28 --to=2025-03-24 --workers=5
 ```
 
-## Postgres
+> [!NOTE]  
+> There are two recently added flags: `overwriteDuplicates` and `skipCheckingDuplicates`.
+> There are actually duplicated entries in the source files,
+> so the first flag is recommended to use if you don't care about single entries being overwritten.
+> The latter one is experimental and may increase or decrease insert time in various scenarios - test it yourself.
 
-The data are stored in a table called `decisions` with the schema matching the one in CSV files, although PlatformUID is
-split to SnowflakeTime, EntityID, and EntityType for clarity. The table is created automatically if it doesn't exist,
-but the selected database IS NOT. The table will follow the rules
-of [automigration by Gorm](https://gorm.io/docs/migration.html), with all the nuances
-connected with that.
+## Database notes
+
+The data is stored in a table called `decisions` with a schema that matches the one in the CSV files.
+However, for clarity, PlatformUID is split into SnowflakeTime, EntityID and EntityType.
+The table is created automatically if it does not exist, but the selected database IS NOT.
+The table will follow the rules of [automigration by Gorm](https://gorm.io/docs/migration.html) along with all the
+nuances.
 
 ## Test
 
 ```bash
-./dsacord --dbhost localhost --dbuser postgres --dbpassword root --dbname dsacord --from 2024-08-21 --to 2025-04-29 --workers 5      
-✅  Connected to database
-📆 Importing from 2024-08-21 to 2025-04-29
-⚠️ Your --to date is in the future or in today. This may result in excess 404 errors.
-2025/04/29 05:07:29 💾 Inserting decisions in parallel. Progress bar will not be shown.
-
-🌍 Downloading https://dsa-sor-data-dumps.s3.eu-central-1.amazonaws.com/sor-discord-netherlands-bv-2024-08-21-full.zip
-
-🌍 Downloading https://dsa-sor-data-dumps.s3.eu-central-1.amazonaws.com/sor-discord-netherlands-bv-2024-08-25-full.zip
+./dsacord --dbuser postgres --dbpassword root --from=2024-12-28 --to=2025-08-08 --workers=5 --overwriteDuplicates --skipCheckingDuplicates
+ℹ️  DSAcord v0.2.0
+✅  Connected to the database
+📆  Importing from 2024-12-28 to 2025-08-08
+⚠️  Your --to date is in the future or in today. This may result in excess 404 errors.
+💾  Inserting decisions in parallel. Progress bar will not be shown.
+💀  Watch out: duplicated keys will be silently overwritten!
+2025/08/07 22:43:51 Start!
 
 (cut...)
 
-🌍 Downloading https://dsa-sor-data-dumps.s3.eu-central-1.amazonaws.com/sor-discord-netherlands-bv-2025-04-29-full.zip
-2025/04/29 05:11:43 Error: download failed for https://dsa-sor-data-dumps.s3.eu-central-1.amazonaws.com/sor-discord-netherlands-bv-2025-04-28-full.zip: forbidden or not exists
-2025/04/29 05:11:43 Error: download failed for https://dsa-sor-data-dumps.s3.eu-central-1.amazonaws.com/sor-discord-netherlands-bv-2025-04-29-full.zip: forbidden or not exists
+2025/08/07 22:49:54 🌍  Downloading https://dsa-sor-data-dumps.s3.eu-central-1.amazonaws.com/sor-discord-netherlands-bv-2025-08-08-full.zip
+2025/08/07 22:49:54 Error: download failed for https://dsa-sor-data-dumps.s3.eu-central-1.amazonaws.com/sor-discord-netherlands-bv-2025-08-07-full.zip: forbidden or does not exist
+2025/08/07 22:49:54 Error: download failed for https://dsa-sor-data-dumps.s3.eu-central-1.amazonaws.com/sor-discord-netherlands-bv-2025-08-08-full.zip: forbidden or does not exist
 
-✅  Rows inserted: 13449081
-⏱  Elapsed time: 4m20.0347637s
-📁 'Decisions' table size: 13592 MB
+✅  Rows inserted: 14405318
+⏱  Elapsed time: 6m19.644562s
+📁  Table size: 15 GB
 ```
